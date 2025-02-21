@@ -65,7 +65,9 @@ async def process_problem(session, problem, args):
     print(f"\nTime taken to process problem {problem_id}: {elapsed_time:.2f} seconds")
 
 async def main(args):
-    original_problems = glob.glob(args.test_path + '\\*')
+    print(f"Test path: {args.test_path}")
+    print(f"Files in {args.test_path}: {os.listdir(args.test_path)}")
+    original_problems = glob.glob(args.test_path + '/*')
     problems = sorted(original_problems)
     
     if args.start > len(problems) or args.start < 0:
