@@ -29,7 +29,7 @@ async def process_problem(session, problem, args):
     prob_path = os.path.join(problem)
     print(f"\nProcessing problem: {prob_path}\n")
 
-    problem_id = int(problem.split('\\')[-1])
+    problem_id = int(problem.split('/')[-1])
     if os.path.exists(os.path.join(args.save_path, f"{problem_id}.txt")):
         return
     
