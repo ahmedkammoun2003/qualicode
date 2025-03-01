@@ -18,27 +18,36 @@ from trainers.trainer_plan import Trainer_Plan
 from transformers import Trainer  
 
 import torch.multiprocessing
-torch.multiprocessing.set_sharing_strategy('file_system')
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
+# Détection des GPU disponibles
+torch.multiprocessing.set_sharing_strategy('file_system')
+num_gpus = torch.cuda.device_count()
+os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(str(i) for i in range(num_gpus))
+device = "cuda" if torch.cuda.is_available() else "cpu"
+print(f"Using {num_gpus} GPUs")
 
 def run_training(args, train_data):
     if args.model in ['codet5-base', 'codet5-large', 'codet5-large-ntp-py']:
-        model_path = args.model_path if args.model_path is not None else 'Salesforce/{}'.format(args.model)        
-        print("Loading model from {}...".format(model_path))
+        model_path = args.model_path if args.model_path is not None else f"Salesforce/{args.model}"
+        print(f"Loading model from {model_path}...")
         model = transformers.T5ForConditionalGeneration.from_pretrained(
             model_path,
             tuning_mode=args.tuning_mode, 
-            clone_pl_head=args.clone_pl_head) 
+            clone_pl_head=args.clone_pl_head
+        )
         
         if args.clone_pl_head:
-            # Optional: clone a seperate PL head and initialize the model weights from finetuned LM head 
             print("Initializing Plan head with finetuned LM head...")
             lm_head_params = model.lm_head.weight.detach().numpy()
             model.pl_head.weight = torch.nn.Parameter(torch.tensor(lm_head_params))
-                
-    print('Finished loading model {}'.format(args.model))
-
+    
+    print(f'Finished loading model {args.model}')
+    
+    if num_gpus > 1:
+        model = torch.nn.DataParallel(model)
+    
+    model.to(device)
+    
     start_iteration = 0
     train_data.start_iteration = start_iteration
     print(f"Starting main loop")
@@ -55,7 +64,7 @@ def run_training(args, train_data):
 
         num_train_epochs=args.epochs,
         per_device_train_batch_size=1,
-        gradient_accumulation_steps=2,
+        gradient_accumulation_steps=2 * num_gpus,  
 
         learning_rate=5e-6,
         weight_decay=0.05,
@@ -70,43 +79,35 @@ def run_training(args, train_data):
         dataloader_drop_last=True,
         dataloader_num_workers=0 if args.db else 8,
 
-        local_rank=args.local_rank,
-        
+        fp16=True,
+        torch_compile=True,
+
+        local_rank=-1,
     )
     
     trainer = Trainer_Plan(
-            model=model,
-            args=training_args,
-            train_dataset=train_data,
-            tuning_mode=args.tuning_mode,
+        model=model,
+        args=training_args,
+        train_dataset=train_data,
+        tuning_mode=args.tuning_mode,
     )
     
     trainer.train()
     
-    if args.local_rank == 0:
-        # Save model checkpoint
-        trainer.save_model()  # This will save the model checkpoint as per Trainer_Plan's implementation
-        
-        # Save model in PKL format
+    if args.local_rank in [-1, 0]:
+        trainer.save_model()
         model_save_path = os.path.join(args.save_dir, "final_checkpoint.pkl")
         with open(model_save_path, 'wb') as f:
-            torch.save(model.state_dict(), f)  # Save only the model's state_dict in PKL format
-
+            torch.save(model.state_dict(), f)
 
 def get_dataset(args): 
-    
     fnames = os.listdir(args.train_path) 
     
-    # train in debugging mode with small data split 
     if args.db:
         fnames = fnames[:50]
 
-    if args.model in ['codet5-base', 'codet5-large', 'codet5-large-ntp-py']:
-        max_tokens = 512 
-        max_src_tokens = 600
-    else:
-        max_tokens = 1024
-        max_src_tokens = -1
+    max_tokens = 512 if args.model in ['codet5-base', 'codet5-large', 'codet5-large-ntp-py'] else 1024
+    max_src_tokens = 600 if args.model in ['codet5-base', 'codet5-large', 'codet5-large-ntp-py'] else -1
     
     train_data = APPSBaseDataset(
         dataroot=args.train_path, 
@@ -116,28 +117,19 @@ def get_dataset(args):
         max_src_tokens=max_src_tokens,
         sample_mode=args.sample_mode
     )
-
     return train_data
 
-
 def main(args):
-
     argsdict = vars(args)
     print(pprint.pformat(argsdict))
-
     os.makedirs(args.save_dir, exist_ok=True)
     
-    # Load dataset 
     train_data = get_dataset(args)
-
-    # Save args to file
+    
     json.dump(argsdict, open(os.path.join(args.save_dir, "args.json"), 'w'))
-
-    # Load and train model; save model checkpoints 
+    
     run_training(args, train_data)
-
 
 if __name__ == "__main__":
     from configs.train_codet5_configs import *
-    
     main(args)
