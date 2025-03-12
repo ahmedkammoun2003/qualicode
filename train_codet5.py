@@ -73,8 +73,8 @@ def run_training(args, train_data):
         eval_steps=0, 
 
         num_train_epochs=args.epochs,
-        per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=args.gradient_step * num_gpus,  
+        per_device_train_batch_size=args.batch_size_per_replica,
+        gradient_accumulation_steps=args.grad_acc_steps * num_gpus,  
 
         learning_rate=5e-6,
         weight_decay=0.05,
