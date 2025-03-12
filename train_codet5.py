@@ -140,7 +140,6 @@ def get_dataset(args):
 
 def main(args):
     argsdict = vars(args)
-    print(args)
     print(pprint.pformat(argsdict))
     os.makedirs(args.save_dir, exist_ok=True)
     
