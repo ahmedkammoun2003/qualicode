@@ -48,9 +48,19 @@ def run_training(args, train_data):
     
     model.to(device)
     
+    # Load checkpoint if it exists
     start_iteration = 0
+    if args.resume_from_checkpoint:
+        checkpoint_path = os.path.join(args.save_dir, "checkpoint.pkl")
+        if os.path.exists(checkpoint_path):
+            print(f"Loading checkpoint from {checkpoint_path}")
+            checkpoint = torch.load(checkpoint_path)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            start_iteration = checkpoint['iteration']
+            print(f"Resuming from iteration {start_iteration}")
+    
     train_data.start_iteration = start_iteration
-    print(f"Starting main loop")
+    print(f"Starting main loop from iteration {start_iteration}")
 
     training_args = transformers.TrainingArguments(
         output_dir=args.save_dir,
@@ -63,8 +73,8 @@ def run_training(args, train_data):
         eval_steps=0, 
 
         num_train_epochs=args.epochs,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=2 * num_gpus,  
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.gradient_step * num_gpus,  
 
         learning_rate=5e-6,
         weight_decay=0.05,
@@ -95,7 +105,16 @@ def run_training(args, train_data):
     trainer.train()
     
     if args.local_rank in [-1, 0]:
+        # Save final model and checkpoint
         trainer.save_model()
+        final_checkpoint = {
+            'iteration': start_iteration + args.epochs * len(train_data),
+            'model_state_dict': model.state_dict(),
+        }
+        checkpoint_path = os.path.join(args.save_dir, "checkpoint.pkl")
+        torch.save(final_checkpoint, checkpoint_path)
+        
+        # Save a separate final checkpoint
         model_save_path = os.path.join(args.save_dir, "final_checkpoint.pkl")
         with open(model_save_path, 'wb') as f:
             torch.save(model.state_dict(), f)
