@@ -68,7 +68,7 @@ def run_training(args, train_data):
         per_device_train_batch_size=args.batch_size_per_replica,
         gradient_accumulation_steps=args.grad_acc_steps * num_gpus,  
 
-        learning_rate=5e-6,
+        learning_rate=5e-7,
         weight_decay=0.05,
         lr_scheduler_type='constant_with_warmup',
 
