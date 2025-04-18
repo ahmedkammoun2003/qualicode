@@ -1789,7 +1789,7 @@ class Trainer_Plan:
                 raise RuntimeError(
                     "At least one of optuna or ray should be installed. "
                     "To install optuna run `pip install optuna`. "
-                    "To install ray run `pip install ray[tune]`. "
+                    "To install ray run `pip install 'ray[tune]'`. "
                     "To install sigopt run `pip install sigopt`."
                 )
         backend = HPSearchBackend(backend)
@@ -2574,13 +2574,14 @@ class Trainer_Plan:
             else:
                 if has_labels:
                     with self.autocast_smart_context_manager():
-                        loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+                        loss, outputs = self.compute_loss(model, inputs, step=0, return_outputs=True)
                     loss = loss.mean().detach()
 
                     if isinstance(outputs, dict):
                         logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
                     else:
-                        logits = outputs[1:]
+                        # Handle the case where outputs is not a tuple/sequence
+                        logits = outputs if isinstance(outputs, (tuple, list)) else (outputs,)
                 else:
                     loss = None
                     with self.autocast_smart_context_manager():
@@ -2588,7 +2589,8 @@ class Trainer_Plan:
                     if isinstance(outputs, dict):
                         logits = tuple(v for k, v in outputs.items() if k not in ignore_keys)
                     else:
-                        logits = outputs
+                        # Handle the case where outputs is not a tuple/sequence
+                        logits = outputs if isinstance(outputs, (tuple, list)) else (outputs,)
                     # TODO: this needs to be fixed and made cleaner later.
                     if self.args.past_index >= 0:
                         self._past = outputs[self.args.past_index - 1]
