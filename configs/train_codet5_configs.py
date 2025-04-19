@@ -18,8 +18,8 @@ parser.add_argument('--clone_pl_head', default=True, action='store_true', help='
 # Training
 parser.add_argument('--epochs', default=20, type=int, help='total number of training epochs')
 parser.add_argument('--lr', default=2e-5, type=float, help='training learning rate')
-parser.add_argument('--batch-size-per-replica', default=2, type=int, help='batch size per GPU')
-parser.add_argument('--grad-acc-steps', default=16, type=int, help='number of training steps before each gradient update')
+parser.add_argument('--batch_size_per_replica', default=2, type=int, help='batch size per GPU')
+parser.add_argument('--grad_acc_steps', default=16, type=int, help='number of training steps before each gradient update')
 parser.add_argument('--deepspeed', default = None, type=str, help='path to deepspeed configuration file; set None if not using deepspeed')
 parser.add_argument('--fp16', default=True, action='store_true', help='set 16-bit training to reduce memory usage')
 parser.add_argument('--local_rank', default=-1, type=int)
