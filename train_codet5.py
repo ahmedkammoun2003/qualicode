@@ -104,7 +104,7 @@ def run_training(args, train_data, eval_data):
     training_args = TrainingArguments(
         output_dir=args.save_dir, overwrite_output_dir=True, do_train=True, do_eval=True,
         evaluation_strategy='steps', eval_steps=1, num_train_epochs=args.epochs,
-        per_device_train_batch_size=args.batch-size-per-replica, gradient_accumulation_steps=args.grad-acc-steps,
+        per_device_train_batch_size=args.batch_size_per_replica, gradient_accumulation_steps=args.grad_acc_steps,
         learning_rate=args.lr, weight_decay=0.05, lr_scheduler_type='constant_with_warmup',
         logging_dir=args.save_dir, logging_first_step=True, logging_steps=1,
         save_steps=1, save_total_limit=1, dataloader_drop_last=True,
