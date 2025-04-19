@@ -18,7 +18,14 @@ from trainers.trainer_plan import Trainer_Plan
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # On dit qu’on veut utiliser le GPU numéro 1 pour aller plus vite
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+gpu_count = torch.cuda.device_count()
+if gpu_count > 0:
+    gpu_ids = ','.join(str(i) for i in range(gpu_count))
+    os.environ["CUDA_VISIBLE_DEVICES"] = gpu_ids
+    print(f"Using {gpu_count} GPUs: {gpu_ids}")
+else:
+    print("No GPUs available, using CPU")
+
 
 
 def get_dataset(args):
