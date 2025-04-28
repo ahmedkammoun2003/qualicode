@@ -26,12 +26,9 @@ from torch.utils.data.distributed import DistributedSampler
 
 def setup_distributed(args):
     """Setup distributed training"""
-    if 'LOCAL_RANK' in os.environ:
-        args.local_rank = int(os.environ['LOCAL_RANK'])
-    if 'WORLD_SIZE' in os.environ:
-        args.world_size = int(os.environ['WORLD_SIZE'])
-    else:
-        args.world_size = torch.cuda.device_count()
+    # Initialize local_rank from environment variable
+    args.local_rank = int(os.environ.get('LOCAL_RANK', -1))
+    args.world_size = int(os.environ.get('WORLD_SIZE', 1))
 
     if args.world_size > 1:
         torch.cuda.set_device(args.local_rank)
@@ -126,5 +123,6 @@ def main(args):
 
 # 🧁 Si on lance ce fichier tout seul (et pas importé), alors on exécute main()
 if __name__ == "__main__":
-    from configs.train_codet5_configs import args
+    from configs.train_codet5_configs import get_args
+    args = get_args()
     main(args)
