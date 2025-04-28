@@ -26,18 +26,18 @@ from torch.utils.data.distributed import DistributedSampler
 
 def setup_distributed(args):
     """Setup distributed training"""
+    if 'LOCAL_RANK' in os.environ:
+        args.local_rank = int(os.environ['LOCAL_RANK'])
     if 'WORLD_SIZE' in os.environ:
         args.world_size = int(os.environ['WORLD_SIZE'])
-        args.rank = int(os.environ['RANK'])
     else:
         args.world_size = torch.cuda.device_count()
-        args.rank = args.local_rank
 
     if args.world_size > 1:
         torch.cuda.set_device(args.local_rank)
-        dist.init_process_group(backend='nccl')
+        dist.init_process_group(backend='nccl', init_method='env://')
     
-    args.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    args.device = torch.device(f"cuda:{args.local_rank}" if torch.cuda.is_available() else "cpu")
     return args
 
 def run_training(args, train_data, val_data, test_data):
