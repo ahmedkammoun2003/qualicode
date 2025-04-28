@@ -10,7 +10,6 @@ from tqdm import tqdm
 from datetime import datetime
 from codebleu import calc_codebleu
 
-# On prend des morceaux de code qu’on a faits nous-mêmes
 from Datasets_codeT5.apps_dataset import APPSBaseDataset
 from trainers.trainer_plan import Trainer_Plan
 
