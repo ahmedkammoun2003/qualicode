@@ -17,7 +17,7 @@ from trainers.trainer_plan import Trainer_Plan
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 # On dit qu’on veut utiliser le GPU numéro 1 pour aller plus vite
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+# os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 import torch.distributed as dist
 from torch.utils.data.distributed import DistributedSampler
 
@@ -26,15 +26,13 @@ from torch.utils.data.distributed import DistributedSampler
 
 def setup_distributed(args):
     """Setup distributed training"""
-    # Initialize local_rank from environment variable
     args.local_rank = int(os.environ.get('LOCAL_RANK', -1))
     args.world_size = int(os.environ.get('WORLD_SIZE', 1))
 
     if args.world_size > 1:
-        torch.cuda.set_device(args.local_rank)
         dist.init_process_group(backend='nccl', init_method='env://')
     
-    args.device = torch.device(f"cuda:{args.local_rank}" if torch.cuda.is_available() else "cpu")
+    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     return args
 
 def run_training(args, train_data, val_data, test_data):
@@ -47,9 +45,8 @@ def run_training(args, train_data, val_data, test_data):
 
     if args.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(
-            model, 
-            device_ids=[args.local_rank],
-            output_device=args.local_rank
+            model,
+            find_unused_parameters=True
         )
 
     training_args = TrainingArguments(
