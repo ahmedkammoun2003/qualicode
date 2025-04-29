@@ -128,3 +128,29 @@ if __name__ == "__main__":
     from configs.train_codet5_configs import get_args
     args = get_args()
     main(args)
+
+
+def get_dataset(args):
+    """Get training, validation and test datasets"""
+    fnames = os.listdir(args.train_path)
+    if args.db:
+        fnames = fnames[:50]
+
+    # Calculate split indices for 80-10-10 split
+    train_split = int(0.8 * len(fnames))
+    val_split = int(0.9 * len(fnames))
+    
+    # Split the data into train, validation, and test sets
+    train_fnames = fnames[:train_split]
+    val_fnames = fnames[train_split:val_split]
+    test_fnames = fnames[val_split:]
+
+    # Set token lengths based on model type
+    max_tokens, max_src_tokens = (512, 600) if args.model in ['codet5-base', 'codet5-large', 'codet5-large-ntp-py'] else (1024, -1)
+
+    # Create datasets
+    train_data = APPSBaseDataset(args.train_path, train_fnames, args.model, max_tokens, args.sample_mode, max_src_tokens)
+    val_data = APPSBaseDataset(args.train_path, val_fnames, args.model, max_tokens, args.sample_mode, max_src_tokens)
+    test_data = APPSBaseDataset(args.train_path, test_fnames, args.model, max_tokens, args.sample_mode, max_src_tokens)
+
+    return train_data, val_data, test_data
