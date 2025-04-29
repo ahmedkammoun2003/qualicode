@@ -108,8 +108,13 @@ def main(args):
     print(pprint.pformat(vars(args)))
 
     os.makedirs(args.save_dir, exist_ok=True)
+    
+    # Create a JSON-serializable version of the args
+    args_dict = vars(args).copy()
+    args_dict['device'] = str(args_dict['device'])  # Convert device to string
+    
     with open(os.path.join(args.save_dir, "args.json"), 'w') as f:
-        json.dump(vars(args), f)
+        json.dump(args_dict, f, indent=4)
 
     # Get all three datasets
     train_data, val_data, test_data = get_dataset(args)
