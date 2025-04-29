@@ -1,185 +1,172 @@
-import os
-import json
+
+import io
 import logging
+import math
+import os
 import pprint
-import torch
-import transformers
-from transformers import Trainer, TrainingArguments
-from datasets import Dataset
+import sys
+import time
+import json
+import pdb 
 from tqdm import tqdm
 from datetime import datetime
-from codebleu import calc_codebleu
+
+import transformers
+import torch
 
 from Datasets_codeT5.apps_dataset import APPSBaseDataset
 from trainers.trainer_plan import Trainer_Plan
-# Add these imports at the top with other imports
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
-from models.codet5_plan import CodeT5_Plan
+from transformers import Trainer  
 
-def load_model(args):
-    """Load and configure the model and tokenizer"""
-    # Load tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    args.tokenizer = tokenizer
-    
-    # Load base model
-    if args.model_path:
-        model = CodeT5_Plan.from_pretrained(args.model_path)
-    else:
-        base_model = AutoModelForSeq2SeqLM.from_pretrained(args.model)
-        model = CodeT5_Plan(base_model.config, base_model)
-    
-    # Configure model settings
-    model.config.tuning_mode = args.tuning_mode
-    if args.clone_pl_head:
-        model.clone_plan_head()
-    
-    return model
-
-
-
-# On dit à PyTorch comment partager les données quand on utilise plusieurs processus
+import torch.multiprocessing
 torch.multiprocessing.set_sharing_strategy('file_system')
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
-# On dit qu’on veut utiliser le GPU numéro 1 pour aller plus vite
-# os.environ["CUDA_VISIBLE_DEVICES"] = '1'
-import torch.distributed as dist
-from torch.utils.data.distributed import DistributedSampler
 
-# Remove the CUDA_VISIBLE_DEVICES setting to allow all GPUs
-# os.environ["CUDA_VISIBLE_DEVICES"] = '1'  # Comment out or remove this line
+def run_training(args, train_data):
+    if args.model in ['codet5-base', 'codet5-large', 'codet5-large-ntp-py']:
+        model_path = args.model_path if args.model_path is not None else 'Salesforce/{}'.format(args.model)        
+        print("Loading model from {}...".format(model_path))
+        model = transformers.T5ForConditionalGeneration.from_pretrained(
+            model_path,
+            tuning_mode=args.tuning_mode, 
+            clone_pl_head=args.clone_pl_head) 
+        
+        if args.clone_pl_head:
+            # Optional: clone a seperate PL head and initialize the model weights from finetuned LM head 
+            print("Initializing Plan head with finetuned LM head...")
+            lm_head_params = model.lm_head.weight.detach().numpy()
+            model.pl_head.weight = torch.nn.Parameter(torch.tensor(lm_head_params))
+                
+    print('Finished loading model {}'.format(args.model))
 
-def setup_distributed(args):
-    """Setup distributed training"""
-    args.local_rank = int(os.environ.get('LOCAL_RANK', -1))
-    args.world_size = int(os.environ.get('WORLD_SIZE', 1))
+    start_iteration = 0
+    train_data.start_iteration = start_iteration
+    print(f"Starting main loop")
 
-    if args.world_size > 1:
-        dist.init_process_group(backend='nccl', init_method='env://')
-    
-    args.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    return args
-
-def run_training(args, train_data, val_data, test_data):
-    """
-    🏋️‍♂️ Ici on entraîne le modèle avec nos données.
-    Ensuite, on regarde s'il a bien appris avec CodeBLEU sur les données de validation et de test.
-    """
-    model = load_model(args)
-    model.to(args.device)
-
-    if args.world_size > 1:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model,
-            find_unused_parameters=True
-        )
-
-    training_args = TrainingArguments(
+    training_args = transformers.TrainingArguments(
         output_dir=args.save_dir,
-        overwrite_output_dir=True,
+        overwrite_output_dir=True, 
+        
         do_train=True,
-        do_eval=True,
-        evaluation_strategy='steps',
-        eval_steps=1,
+        do_eval=True,  # Changed from False
+        evaluation_strategy='steps',  # Changed from 'no'
+        eval_steps=args.save_freq,  # Set evaluation frequency
+        do_predict=True,
+        evaluation_strategy='no',
+        eval_steps=0, 
+
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size_per_replica,
         gradient_accumulation_steps=args.grad_acc_steps,
+
         learning_rate=args.lr,
         weight_decay=0.05,
         lr_scheduler_type='constant_with_warmup',
-        logging_dir=args.save_dir,
+
+        logging_dir=args.save_dir, 
         logging_first_step=True,
-        logging_steps=1,
-        save_steps=1,
-        save_total_limit=1,
+        logging_steps=args.log_freq,
+        save_steps=args.save_freq,
+        save_total_limit=args.save_total_limit,
+
         dataloader_drop_last=True,
-        dataloader_num_workers=0 if getattr(args, 'db', False) else 8,
+        dataloader_num_workers=0 if args.db else 8,
+
         local_rank=args.local_rank,
-        ddp_backend='nccl',
+
+        deepspeed=args.deepspeed,
+        fp16=args.fp16,
+        
     )
-
-    trainer = Trainer_Plan(model=model, args=training_args, train_dataset=train_data, eval_dataset=val_data)
-
-    print("Starting training...")
-    trainer.train()
-
-    if args.local_rank == 0:
-        print("Saving final model checkpoint...")
-        checkpoint_dir = os.path.join(args.save_dir, "final_checkpoint")
-        model.save_pretrained(checkpoint_dir)
-        args.tokenizer.save_pretrained(checkpoint_dir)
-        torch.save(model.state_dict(), os.path.join(args.save_dir, "final_checkpoint.pkl"))
-
-        # Evaluate on both validation and test sets
-        print("Evaluating on validation set...")
-        val_score = evaluate_with_codebleu(model, val_data, args)
-        print("Evaluating on test set...")
-        test_score = evaluate_with_codebleu(model, test_data, args)
-
-        # Save both scores
-        with open(os.path.join(args.save_dir, "codebleu_scores.json"), 'w') as f:
-            json.dump({
-                "validation_CodeBLEU": val_score,
-                "test_CodeBLEU": test_score
-            }, f, indent=4)
-
-
-def get_dataset(args):
-    """Get training, validation and test datasets"""
-    fnames = os.listdir(args.train_path)
-    # Use getattr to provide a default value for db
-    if getattr(args, 'db', False):
-        fnames = fnames[:50]
-
-    # Calculate split indices for 80-10-10 split
-    train_split = int(0.8 * len(fnames))
-    val_split = int(0.9 * len(fnames))
     
-    # Split the data into train, validation, and test sets
-    train_fnames = fnames[:train_split]
-    val_fnames = fnames[train_split:val_split]
-    test_fnames = fnames[val_split:]
+    trainer = Trainer_Plan(
+            model=model,
+            args=training_args,
+            train_dataset=train_data,
+            eval_dataset=val_data,  # Add validation dataset
+            tuning_mode=args.tuning_mode,
+    )
+    
+    trainer.train()
+    
+    if args.local_rank == 0:
+        model.save_pretrained(os.path.join(args.save_dir, "final_checkpoint"))
 
-    # Set token lengths based on model type
-    max_tokens, max_src_tokens = (512, 600) if args.model in ['codet5-base', 'codet5-large', 'codet5-large-ntp-py'] else (1024, -1)
 
-    # Create datasets
-    train_data = APPSBaseDataset(args.train_path, train_fnames, args.model, max_tokens, args.sample_mode, max_src_tokens)
-    val_data = APPSBaseDataset(args.train_path, val_fnames, args.model, max_tokens, args.sample_mode, max_src_tokens)
-    test_data = APPSBaseDataset(args.train_path, test_fnames, args.model, max_tokens, args.sample_mode, max_src_tokens)
+def get_dataset(args): 
+    
+    fnames = os.listdir(args.train_path) 
+    
+    # train in debugging mode with small data split 
+    if args.db:
+        fnames = fnames[:50]
+    
+    # Calculate split sizes
+    total_samples = len(fnames)
+    train_size = int(0.7 * total_samples)
+    val_size = int(0.2 * total_samples)
+    test_size = total_samples - train_size - val_size
+    
+    # Split the data
+    train_fnames = fnames[:train_size]
+    val_fnames = fnames[train_size:train_size + val_size]
+    test_fnames = fnames[train_size + val_size:]
+
+    if args.model in ['codet5-base', 'codet5-large', 'codet5-large-ntp-py']:
+        max_tokens = 512 
+        max_src_tokens = 600
+    else:
+        max_tokens = 1024
+        max_src_tokens = -1
+    
+    train_data = APPSBaseDataset(
+        dataroot=args.train_path, 
+        problem_dirs=train_fnames,  # Use training split
+        model=args.model,
+        max_tokens=max_tokens,
+        max_src_tokens=max_src_tokens,
+        sample_mode=args.sample_mode
+    )
+    
+    val_data = APPSBaseDataset(
+        dataroot=args.train_path,
+        problem_dirs=val_fnames,  # Use validation split
+        model=args.model,
+        max_tokens=max_tokens,
+        max_src_tokens=max_src_tokens,
+        sample_mode=args.sample_mode
+    )
+    
+    test_data = APPSBaseDataset(
+        dataroot=args.train_path,
+        problem_dirs=test_fnames,  # Use test split
+        model=args.model,
+        max_tokens=max_tokens,
+        max_src_tokens=max_src_tokens,
+        sample_mode=args.sample_mode
+    )
 
     return train_data, val_data, test_data
 
 
 def main(args):
-    """
-    🚀 C'est la fonction principale qui lance tout le processus.
-    Elle prépare les données, entraîne le modèle, puis l'évalue.
-    """
-    # Setup distributed training
-    args = setup_distributed(args)
-    print(pprint.pformat(vars(args)))
+    argsdict = vars(args)
+    print(pprint.pformat(argsdict))
 
     os.makedirs(args.save_dir, exist_ok=True)
     
-    # Create a JSON-serializable version of the args
-    args_dict = vars(args).copy()
-    args_dict['device'] = str(args_dict['device'])  # Convert device to string
-    
-    with open(os.path.join(args.save_dir, "args.json"), 'w') as f:
-        json.dump(args_dict, f, indent=4)
-
-    # Get all three datasets
+    # Load dataset with splits
     train_data, val_data, test_data = get_dataset(args)
 
-    # Run training with all three datasets
-    run_training(args, train_data, val_data, test_data)
+    # Save args to file
+    json.dump(argsdict, open(os.path.join(args.save_dir, "args.json"), 'w'))
+
+    # Load and train model; save model checkpoints 
+    run_training(args, train_data)
 
 
-# 🧁 Si on lance ce fichier tout seul (et pas importé), alors on exécute main()
 if __name__ == "__main__":
-    from configs.train_codet5_configs import get_args
-    args = get_args()
+    from configs.train_codet5_configs import *
+    
     main(args)
-
-
