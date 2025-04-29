@@ -127,5 +127,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    from configs.train_codet5_configs import *  # Assumes `args` is defined there
+    from configs.train_codet5_configs import get_args
+    
+    args = get_args()  # Get the arguments
     main(args)

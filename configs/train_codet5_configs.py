@@ -43,4 +43,6 @@ def get_args():
     args = parser.parse_args()
     return args
 
+# Remove any global variables or direct args assignment
+
 
