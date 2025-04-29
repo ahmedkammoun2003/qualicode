@@ -30,8 +30,8 @@ class APPSBaseDataset(torch.utils.data.Dataset):
         self.model = model  # Nom du modèle (ex: codet5)
         self.sample_mode = sample_mode  # Méthode d'échantillonnage (non utilisé dans ce code sauf pour vérifier)
 
-        self.max_tokens = max_tokens  # Longueur max de la séquence
-        self.max_src_tokens = max_src_tokens  # Longueur max pour l'entrée uniquement
+        self.max_tokens = 512  # Longueur max de la séquence
+        self.max_src_tokens = 600  # Longueur max pour l'entrée uniquement
 
         self.samples = []  # Liste des échantillons GT (solutions finales)
         self.all_error_types, self.all_error_subtypes, self.all_baseline_error_types = [], [], []
