@@ -68,7 +68,7 @@ def run_training(args, train_data, val_data, test_data):
         save_steps=1,
         save_total_limit=1,
         dataloader_drop_last=True,
-        dataloader_num_workers=0 if args.db else 8,
+        dataloader_num_workers=0 if getattr(args, 'db', False) else 8,
         local_rank=args.local_rank,
         ddp_backend='nccl',
     )
@@ -102,7 +102,8 @@ def run_training(args, train_data, val_data, test_data):
 def get_dataset(args):
     """Get training, validation and test datasets"""
     fnames = os.listdir(args.train_path)
-    if args.db:
+    # Use getattr to provide a default value for db
+    if getattr(args, 'db', False):
         fnames = fnames[:50]
 
     # Calculate split indices for 80-10-10 split
