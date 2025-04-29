@@ -29,6 +29,9 @@ def get_args():
     parser.add_argument('--deepspeed', default=None, type=str, help='path to deepspeed configuration file; set None if not using deepspeed')
     parser.add_argument('--fp16', default=True, action='store_true', help='set 16-bit training to reduce memory usage')
     parser.add_argument('--local-rank', type=int, default=-1, help='Local rank passed from distributed launcher')
+    parser.add_argument("--max_tokens", type=int, default=512, help="Max total tokens (for CodeT5)")
+    parser.add_argument("--max_src_tokens", type=int, default=600, help="Max source tokens (input length)")
+
 
     # Evaluation configurations
     parser.add_argument('--eval-batch-size', default=8, type=int, help='batch size for evaluation')
