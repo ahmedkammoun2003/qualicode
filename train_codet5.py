@@ -12,6 +12,31 @@ from codebleu import calc_codebleu
 
 from Datasets_codeT5.apps_dataset import APPSBaseDataset
 from trainers.trainer_plan import Trainer_Plan
+# Add these imports at the top with other imports
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from models.codet5_plan import CodeT5_Plan
+
+def load_model(args):
+    """Load and configure the model and tokenizer"""
+    # Load tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    args.tokenizer = tokenizer
+    
+    # Load base model
+    if args.model_path:
+        model = CodeT5_Plan.from_pretrained(args.model_path)
+    else:
+        base_model = AutoModelForSeq2SeqLM.from_pretrained(args.model)
+        model = CodeT5_Plan(base_model.config, base_model)
+    
+    # Configure model settings
+    model.config.tuning_mode = args.tuning_mode
+    if args.clone_pl_head:
+        model.clone_plan_head()
+    
+    return model
+
+
 
 # On dit à PyTorch comment partager les données quand on utilise plusieurs processus
 torch.multiprocessing.set_sharing_strategy('file_system')
@@ -156,4 +181,5 @@ if __name__ == "__main__":
     from configs.train_codet5_configs import get_args
     args = get_args()
     main(args)
+
 
