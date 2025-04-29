@@ -30,7 +30,13 @@ def run_training(args, train_data):
         model = transformers.T5ForConditionalGeneration.from_pretrained(
             model_path,
             tuning_mode=args.tuning_mode, 
-            clone_pl_head=args.clone_pl_head) 
+            clone_pl_head=args.clone_pl_head,
+            torch_dtype=torch.float16,  # Use FP16 for model weights
+            low_cpu_mem_usage=True      # Optimize CPU memory usage
+        ) 
+        
+        # Enable gradient checkpointing for memory efficiency
+        model.gradient_checkpointing_enable()
         
         if args.clone_pl_head:
             # Optional: clone a seperate PL head and initialize the model weights from finetuned LM head 
@@ -47,6 +53,13 @@ def run_training(args, train_data):
     training_args = transformers.TrainingArguments(
         output_dir=args.save_dir,
         overwrite_output_dir=True, 
+        
+        # Memory optimization settings
+        gradient_checkpointing=True,
+        optim='adafactor',  # More memory efficient optimizer
+        fp16=True,
+        gradient_accumulation_steps=1,
+        per_device_train_batch_size=1,  # Reduce batch size for memory
         
         do_train=True,
         do_eval=True,  # Changed from False
